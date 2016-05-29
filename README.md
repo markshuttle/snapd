@@ -9,6 +9,9 @@ Take a tour of the snap experience at https://snapcraft.io/ or learn to
 create your own snap at https://snapcraft.io/create/
 
 Snaps are installed with a single command and then updated automatically.
+Updates are transactional so the system is always in a healthy state, and
+failed updates are rolled back automatically.
+
 You can install the stable, candidate, beta or edge version of a snap in
 order to follow upstream development as closely as you prefer. Snaps can
 often be forked so you can install a specific developer's version if you
