@@ -1,6 +1,6 @@
-Before contributing you should sign [Canonical's contributor
-agreement](http://www.ubuntu.com/legal/contributors), it’s the easiest way
-for you to give us permission to use your contributions.
+Before contributing you should sign [the contributor
+agreement](http://www.ubuntu.com/legal/contributors), you keep your rights
+and give us permission to use your contributions.
 
 ## Pull Request management
 
@@ -17,13 +17,13 @@ easing the management of PRs in relation with our internal infrastructure.
 Depending on the afiliation of the GitHub user submitting a PR, the
 following actions may happen after receiving it:
 
-* If the user belongs to the `snapcore` organization or has been
+* If the user belongs to the `snapcore` team or has been
   previously whitelisted, the internal downstream verification jobs will be
   triggered, their progress is reported in the PR's status section. Any of
   the users of the organization can retrigger the execution by posting a
   `retest this please` comment in the PR.
 
-* For user's outside the `ubuntu-core` organization, the internal checks
+* For user's outside `snapcore` team, the internal checks
   won't be triggered by default and the
   [snappy-m-o](https://github.com/snappy-m-o) user, managed by the ghrbp
   plugin, will post a comment "Can one of the admins verify this patch?".
