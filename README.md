@@ -9,8 +9,10 @@ Take a tour of the snap experience at https://snapcraft.io/ or learn to
 create your own snap at https://snapcraft.io/create/
 
 Snaps are installed with a single command and then updated automatically.
-Updates are transactional so the system is always in a healthy state, and
-failed updates are rolled back automatically.
+Apps are stored compressed to use disk space efficiently. Updates are
+transactional and failed updates are rolled back automatically, making
+keeping the system healthy and making snaps a great choice for unattended
+devices.
 
 You can install the stable, candidate, beta or edge version of a snap in
 order to follow upstream development as closely as you prefer. Snaps can
@@ -59,7 +61,7 @@ The easiest way to get the source for `snapd` is to use the `go get` command.
     go get -v github.com/snapcore/snapd/...
 
 This command will checkout the source, download any unmet Go package
-dependencies, and build and install them all.  To checkout without
+dependencies, and build and install them all. To checkout without
 installing, use the `-d` flag. See `go help get` for more options.
 
 At this point you will have the git local repository of the `snapd` source
