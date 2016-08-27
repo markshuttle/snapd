@@ -99,7 +99,7 @@ to have it available in `$GOPATH/bin`
 
 ## Contributing
 
-Contributions are always welcome! Please sign the Canonical contributor
+Contributions are always welcome! Please sign the contributor
 agreement at http://www.ubuntu.com/legal/contributors
 
 Snapd can be found on Github, so in order to fork the source and contribute,
