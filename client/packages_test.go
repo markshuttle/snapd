@@ -21,6 +21,7 @@ package client_test
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 
 	"gopkg.in/check.v1"
@@ -29,9 +30,31 @@ import (
 )
 
 func (cs *clientSuite) TestClientSnapsCallsEndpoint(c *check.C) {
-	_, _ = cs.cli.ListSnaps(nil)
+	_, _ = cs.cli.List(nil)
 	c.Check(cs.req.Method, check.Equals, "GET")
 	c.Check(cs.req.URL.Path, check.Equals, "/v2/snaps")
+	c.Check(cs.req.URL.Query(), check.DeepEquals, url.Values{})
+}
+
+func (cs *clientSuite) TestClientFindRefreshSetsQuery(c *check.C) {
+	_, _, _ = cs.cli.Find(&client.FindOptions{
+		Refresh: true,
+	})
+	c.Check(cs.req.Method, check.Equals, "GET")
+	c.Check(cs.req.URL.Path, check.Equals, "/v2/find")
+	c.Check(cs.req.URL.Query(), check.DeepEquals, url.Values{
+		"q": []string{""}, "select": []string{"refresh"},
+	})
+}
+
+func (cs *clientSuite) TestClientFindPrivateSetsQuery(c *check.C) {
+	_, _, _ = cs.cli.Find(&client.FindOptions{
+		Private: true,
+	})
+	c.Check(cs.req.Method, check.Equals, "GET")
+	c.Check(cs.req.URL.Path, check.Equals, "/v2/find")
+
+	c.Check(cs.req.URL.Query().Get("select"), check.Equals, "private")
 }
 
 func (cs *clientSuite) TestClientSnapsInvalidSnapsJSON(c *check.C) {
@@ -39,15 +62,27 @@ func (cs *clientSuite) TestClientSnapsInvalidSnapsJSON(c *check.C) {
 		"type": "sync",
 		"result": "not a list of snaps"
 	}`
-	_, err := cs.cli.ListSnaps(nil)
+	_, err := cs.cli.List(nil)
 	c.Check(err, check.ErrorMatches, `.*cannot unmarshal.*`)
+}
+
+func (cs *clientSuite) TestClientNoSnaps(c *check.C) {
+	cs.rsp = `{
+		"type": "sync",
+		"result": [],
+		"suggested-currency": "GBP"
+	}`
+	_, err := cs.cli.List(nil)
+	c.Check(err, check.Equals, client.ErrNoSnapsInstalled)
+	_, err = cs.cli.List([]string{"foo"})
+	c.Check(err, check.Equals, client.ErrNoSnapsInstalled)
 }
 
 func (cs *clientSuite) TestClientSnaps(c *check.C) {
 	cs.rsp = `{
 		"type": "sync",
 		"result": [{
-                        "id": "funky-snap-id",
+			"id": "funky-snap-id",
 			"summary": "salutation snap",
 			"description": "hello-world",
 			"download-size": 22212,
@@ -58,11 +93,13 @@ func (cs *clientSuite) TestClientSnaps(c *check.C) {
 			"resource": "/v2/snaps/hello-world.canonical",
 			"status": "available",
 			"type": "app",
-			"version": "1.0.18"
+			"version": "1.0.18",
+			"confinement": "strict",
+			"private": true
 		}],
 		"suggested-currency": "GBP"
 	}`
-	applications, err := cs.cli.ListSnaps(nil)
+	applications, err := cs.cli.List(nil)
 	c.Check(err, check.IsNil)
 	c.Check(applications, check.DeepEquals, []*client.Snap{{
 		ID:            "funky-snap-id",
@@ -76,16 +113,31 @@ func (cs *clientSuite) TestClientSnaps(c *check.C) {
 		Status:        client.StatusAvailable,
 		Type:          client.TypeApp,
 		Version:       "1.0.18",
+		Confinement:   client.StrictConfinement,
+		Private:       true,
+		DevMode:       false,
 	}})
-	otherApps, err := cs.cli.ListSnaps([]string{"foo"})
+	otherApps, err := cs.cli.List([]string{"foo"})
 	c.Check(err, check.IsNil)
 	c.Check(otherApps, check.HasLen, 0)
 }
 
 func (cs *clientSuite) TestClientFilterSnaps(c *check.C) {
-	_, _, _ = cs.cli.FindSnaps("foo")
+	_, _, _ = cs.cli.Find(&client.FindOptions{Query: "foo"})
 	c.Check(cs.req.URL.Path, check.Equals, "/v2/find")
 	c.Check(cs.req.URL.RawQuery, check.Equals, "q=foo")
+}
+
+func (cs *clientSuite) TestClientFindPrefix(c *check.C) {
+	_, _, _ = cs.cli.Find(&client.FindOptions{Query: "foo", Prefix: true})
+	c.Check(cs.req.URL.Path, check.Equals, "/v2/find")
+	c.Check(cs.req.URL.RawQuery, check.Equals, "name=foo%2A") // 2A is `*`
+}
+
+func (cs *clientSuite) TestClientFindOne(c *check.C) {
+	_, _, _ = cs.cli.FindOne("foo")
+	c.Check(cs.req.URL.Path, check.Equals, "/v2/find")
+	c.Check(cs.req.URL.RawQuery, check.Equals, "name=foo")
 }
 
 const (
@@ -96,19 +148,23 @@ func (cs *clientSuite) TestClientSnap(c *check.C) {
 	cs.rsp = `{
 		"type": "sync",
 		"result": {
-                        "id": "funky-snap-id",
-                        "summary": "bla bla",
+			"id": "funky-snap-id",
+			"summary": "bla bla",
 			"description": "WebRTC Video chat server for Snappy",
 			"download-size": 6930947,
 			"icon": "/v2/icons/chatroom.ogra/icon",
 			"installed-size": 18976651,
-                        "install-date": "2016-01-02T15:04:05Z",
+			"install-date": "2016-01-02T15:04:05Z",
 			"name": "chatroom",
 			"developer": "ogra",
 			"resource": "/v2/snaps/chatroom.ogra",
 			"status": "active",
 			"type": "app",
-			"version": "0.1-8"
+			"version": "0.1-8",
+			"confinement": "strict",
+			"private": true,
+			"devmode": true,
+			"trymode": true
 		}
 	}`
 	pkg, _, err := cs.cli.Snap(pkgName)
@@ -128,5 +184,9 @@ func (cs *clientSuite) TestClientSnap(c *check.C) {
 		Status:        client.StatusActive,
 		Type:          client.TypeApp,
 		Version:       "0.1-8",
+		Confinement:   client.StrictConfinement,
+		Private:       true,
+		DevMode:       true,
+		TryMode:       true,
 	})
 }

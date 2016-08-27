@@ -47,7 +47,18 @@ ptrace (read),
 deny ptrace (trace),
 
 # Other miscellaneous accesses for observing the system
+@{PROC}/stat r,
 @{PROC}/vmstat r,
+@{PROC}/diskstats r,
+@{PROC}/kallsyms r,
+
+# These are not process-specific (/proc/*/... and /proc/*/task/*/...)
+@{PROC}/*/{,task/,task/*/} r,
+@{PROC}/*/{,task/*/}auxv r,
+@{PROC}/*/{,task/*/}cmdline r,
+@{PROC}/*/{,task/*/}stat r,
+@{PROC}/*/{,task/*/}statm r,
+@{PROC}/*/{,task/*/}status r,
 `
 
 // http://bazaar.launchpad.net/~ubuntu-security/ubuntu-core-security/trunk/view/head:/data/seccomp/policygroups/ubuntu-core/16.04/system-observe

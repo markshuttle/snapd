@@ -25,6 +25,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"github.com/snapcore/snapd/arch"
+	"github.com/snapcore/snapd/dirs"
 	"github.com/snapcore/snapd/snap"
 	"github.com/snapcore/snapd/wrappers"
 )
@@ -37,13 +38,15 @@ const expectedWrapper = `#!/bin/sh
 set -e
 
 # snap info
-export SNAP="/snap/pastebinit/44"
+export SNAP="%[2]s/pastebinit/44"
+export SNAP_COMMON="/var/snap/pastebinit/common"
 export SNAP_DATA="/var/snap/pastebinit/44"
 export SNAP_NAME="pastebinit"
 export SNAP_VERSION="1.4.0.0.1"
 export SNAP_REVISION="44"
 export SNAP_ARCH="%[1]s"
 export SNAP_LIBRARY_PATH="/var/lib/snapd/lib/gl:"
+export SNAP_USER_COMMON="$HOME/snap/pastebinit/common"
 export SNAP_USER_DATA="$HOME/snap/pastebinit/44"
 
 if [ ! -d "$SNAP_USER_DATA" ]; then
@@ -54,7 +57,7 @@ export HOME="$SNAP_USER_DATA"
 # Snap name is: pastebinit
 # App name is: pastebinit
 
-/usr/bin/ubuntu-core-launcher snap.pastebinit.pastebinit snap.pastebinit.pastebinit /snap/pastebinit/44/bin/pastebinit "$@"
+exec /usr/bin/ubuntu-core-launcher snap.pastebinit.pastebinit snap.pastebinit.pastebinit %[2]s/pastebinit/44/bin/pastebinit "$@"
 `
 
 func (s *binariesWrapperGenSuite) TestSnappyGenerateSnapBinaryWrapper(c *C) {
@@ -68,7 +71,7 @@ func (s *binariesWrapperGenSuite) TestSnappyGenerateSnapBinaryWrapper(c *C) {
 		Command: "bin/pastebinit",
 	}
 
-	expected := fmt.Sprintf(expectedWrapper, arch.UbuntuArchitecture())
+	expected := fmt.Sprintf(expectedWrapper, arch.UbuntuArchitecture(), dirs.SnapMountDir)
 
 	generatedWrapper, err := wrappers.GenerateSnapBinaryWrapper(binary)
 	c.Assert(err, IsNil)

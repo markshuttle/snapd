@@ -320,6 +320,13 @@ func (c *Change) taskStatusChanged(t *Task, old, new Status) {
 	// Here is the exact moment when a change goes from unready to ready,
 	// and from ready to unready. For now handle only the first of those.
 	// For the latter the channel might be replaced in the future.
+	select {
+	case <-c.ready:
+		if !c.Status().Ready() {
+			panic(fmt.Errorf("change %s unexpectedly became unready (%s)", c.ID(), c.Status()))
+		}
+	default:
+	}
 	c.markReady()
 }
 
@@ -418,7 +425,7 @@ func (c *Change) Tasks() []*Task {
 	return c.state.tasksIn(c.taskIDs)
 }
 
-// Abort cancels the change, whether in progress or not.
+// Abort flags the change for cancellation, whether in progress or not. Cancellation will proceed at the next ensure pass.
 func (c *Change) Abort() {
 	c.state.writing()
 	for _, tid := range c.taskIDs {

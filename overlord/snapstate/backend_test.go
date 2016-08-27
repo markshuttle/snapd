@@ -21,8 +21,10 @@ package snapstate_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
+	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/overlord/auth"
 	"github.com/snapcore/snapd/overlord/snapstate"
 	"github.com/snapcore/snapd/overlord/state"
@@ -34,62 +36,170 @@ import (
 type fakeOp struct {
 	op string
 
-	macaroon string
-	name     string
-	revno    snap.Revision
-	channel  string
-	flags    int
-	active   bool
-	sinfo    snap.SideInfo
+	name  string
+	revno snap.Revision
+	sinfo snap.SideInfo
+	stype snap.Type
+	cand  store.RefreshCandidate
 
 	old string
+}
+
+type fakeDownload struct {
+	name     string
+	macaroon string
+}
+
+type fakeStore struct {
+	downloads           []fakeDownload
+	fakeBackend         *fakeSnappyBackend
+	fakeCurrentProgress int
+	fakeTotalProgress   int
+	state               *state.State
+}
+
+func (f *fakeStore) pokeStateLock() {
+	// the store should be called without the state lock held. Try
+	// to acquire it.
+	f.state.Lock()
+	f.state.Unlock()
+}
+
+func (f *fakeStore) Snap(name, channel string, devmode bool, revision snap.Revision, user *auth.UserState) (*snap.Info, error) {
+	f.pokeStateLock()
+
+	if revision.Unset() {
+		revision = snap.R(11)
+		if channel == "channel-for-7" {
+			revision.N = 7
+		}
+	}
+
+	info := &snap.Info{
+		SideInfo: snap.SideInfo{
+			RealName: strings.Split(name, ".")[0],
+			Channel:  channel,
+			SnapID:   "snapIDsnapidsnapidsnapidsnapidsn",
+			Revision: revision,
+		},
+		Version: name,
+		DownloadInfo: snap.DownloadInfo{
+			DownloadURL: "https://some-server.com/some/path.snap",
+		},
+	}
+	f.fakeBackend.ops = append(f.fakeBackend.ops, fakeOp{op: "storesvc-snap", name: name, revno: revision})
+
+	return info, nil
+}
+
+func (f *fakeStore) Find(search *store.Search, user *auth.UserState) ([]*snap.Info, error) {
+	panic("Find called")
+}
+
+func (f *fakeStore) ListRefresh(cands []*store.RefreshCandidate, _ *auth.UserState) ([]*snap.Info, error) {
+	f.pokeStateLock()
+
+	if len(cands) == 0 {
+		return nil, nil
+	}
+	if len(cands) != 1 {
+		panic("ListRefresh unexpectedly called with more than one candidate")
+	}
+	cand := cands[0]
+
+	snapID := cand.SnapID
+
+	if snapID == "" {
+		return nil, nil
+	}
+
+	var name string
+	if snapID == "some-snap-id" {
+		name = "some-snap"
+	} else {
+		panic(fmt.Sprintf("ListRefresh: unknown snap-id: %s", snapID))
+	}
+
+	revno := snap.R(11)
+	if cand.Channel == "channel-for-7" {
+		revno = snap.R(7)
+	}
+
+	info := &snap.Info{
+		SideInfo: snap.SideInfo{
+			RealName: name,
+			Channel:  cand.Channel,
+			SnapID:   cand.SnapID,
+			Revision: revno,
+		},
+		Version: name,
+		DownloadInfo: snap.DownloadInfo{
+			DownloadURL: "https://some-server.com/some/path.snap",
+		},
+	}
+
+	var hit snap.Revision
+	if cand.Revision != revno {
+		hit = revno
+	}
+	for _, blocked := range cand.Block {
+		if blocked == revno {
+			hit = snap.Revision{}
+			break
+		}
+	}
+
+	f.fakeBackend.ops = append(f.fakeBackend.ops, fakeOp{op: "storesvc-list-refresh", cand: *cand, revno: hit})
+
+	if hit.Unset() {
+		return nil, nil
+	}
+
+	return []*snap.Info{info}, nil
+}
+
+func (f *fakeStore) SuggestedCurrency() string {
+	f.pokeStateLock()
+
+	return "XTS"
+}
+
+func (f *fakeStore) Download(name string, snapInfo *snap.DownloadInfo, pb progress.Meter, user *auth.UserState) (string, error) {
+	f.pokeStateLock()
+
+	var macaroon string
+	if user != nil {
+		macaroon = user.StoreMacaroon
+	}
+	f.downloads = append(f.downloads, fakeDownload{
+		macaroon: macaroon,
+		name:     name,
+	})
+	f.fakeBackend.ops = append(f.fakeBackend.ops, fakeOp{op: "storesvc-download", name: name})
+
+	pb.SetTotal(float64(f.fakeTotalProgress))
+	pb.Set(float64(f.fakeCurrentProgress))
+
+	return "downloaded-snap-path", nil
+}
+
+func (f *fakeStore) Buy(options *store.BuyOptions, user *auth.UserState) (*store.BuyResult, error) {
+	panic("Never expected fakeStore.Buy to be called")
+}
+
+func (f *fakeStore) PaymentMethods(user *auth.UserState) (*store.PaymentInformation, error) {
+	panic("Never expected fakeStore.PaymentMethods to be called")
+}
+
+func (f *fakeStore) Assertion(*asserts.AssertionType, []string, *auth.UserState) (asserts.Assertion, error) {
+	panic("Never expected fakeStore.Assertion to be called")
 }
 
 type fakeSnappyBackend struct {
 	ops []fakeOp
 
-	fakeCurrentProgress int
-	fakeTotalProgress   int
-
-	linkSnapFailTrigger string
-}
-
-func (f *fakeSnappyBackend) Download(name, channel string, checker func(*snap.Info) error, p progress.Meter, auther store.Authenticator) (*snap.Info, string, error) {
-	p.Notify("download")
-	var macaroon string
-	if auther != nil {
-		macaroon = auther.(*auth.MacaroonAuthenticator).Macaroon
-	}
-	f.ops = append(f.ops, fakeOp{
-		op:       "download",
-		macaroon: macaroon,
-		name:     name,
-		channel:  channel,
-	})
-	p.SetTotal(float64(f.fakeTotalProgress))
-	p.Set(float64(f.fakeCurrentProgress))
-
-	revno := snap.R(11)
-	if channel == "channel-for-7" {
-		revno.N = 7
-	}
-
-	info := &snap.Info{
-		SideInfo: snap.SideInfo{
-			OfficialName: strings.Split(name, ".")[0],
-			Channel:      channel,
-			SnapID:       "snapIDsnapidsnapidsnapidsnapidsn",
-			Revision:     revno,
-		},
-		Version: name,
-	}
-
-	err := checker(info)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return info, "downloaded-snap-path", nil
+	linkSnapFailTrigger     string
+	copySnapDataFailTrigger string
 }
 
 func (f *fakeSnappyBackend) OpenSnapFile(snapFilePath string, si *snap.SideInfo) (*snap.Info, snap.Container, error) {
@@ -106,7 +216,8 @@ func (f *fakeSnappyBackend) OpenSnapFile(snapFilePath string, si *snap.SideInfo)
 	return &snap.Info{Architectures: []string{"all"}}, nil, nil
 }
 
-func (f *fakeSnappyBackend) SetupSnap(snapFilePath string, si *snap.SideInfo, flags int) error {
+func (f *fakeSnappyBackend) SetupSnap(snapFilePath string, si *snap.SideInfo, p progress.Meter) error {
+	p.Notify("setup-snap")
 	revno := snap.R(0)
 	if si != nil {
 		revno = si.Revision
@@ -114,27 +225,53 @@ func (f *fakeSnappyBackend) SetupSnap(snapFilePath string, si *snap.SideInfo, fl
 	f.ops = append(f.ops, fakeOp{
 		op:    "setup-snap",
 		name:  snapFilePath,
-		flags: flags,
 		revno: revno,
 	})
 	return nil
 }
 
 func (f *fakeSnappyBackend) ReadInfo(name string, si *snap.SideInfo) (*snap.Info, error) {
+	if name == "borken" {
+		return nil, errors.New(`cannot read info for "borken" snap`)
+	}
 	// naive emulation for now, always works
-	return &snap.Info{SuggestedName: name, SideInfo: *si}, nil
+	info := &snap.Info{SuggestedName: name, SideInfo: *si}
+	info.Type = snap.TypeApp
+	if name == "gadget" {
+		info.Type = snap.TypeGadget
+	}
+	if name == "core" {
+		info.Type = snap.TypeOS
+	}
+	return info, nil
 }
 
-func (f *fakeSnappyBackend) CopySnapData(newInfo, oldInfo *snap.Info, flags int) error {
+func (f *fakeSnappyBackend) StoreInfo(st *state.State, name, channel string, userID int, flags snapstate.Flags) (*snap.Info, error) {
+	return f.ReadInfo(name, &snap.SideInfo{
+		RealName: name,
+	})
+}
+
+func (f *fakeSnappyBackend) CopySnapData(newInfo, oldInfo *snap.Info, p progress.Meter) error {
+	p.Notify("copy-data")
 	old := "<no-old>"
 	if oldInfo != nil {
 		old = oldInfo.MountDir()
 	}
+
+	if newInfo.MountDir() == f.copySnapDataFailTrigger {
+		f.ops = append(f.ops, fakeOp{
+			op:   "copy-data.failed",
+			name: newInfo.MountDir(),
+			old:  old,
+		})
+		return errors.New("fail")
+	}
+
 	f.ops = append(f.ops, fakeOp{
-		op:    "copy-data",
-		name:  newInfo.MountDir(),
-		flags: flags,
-		old:   old,
+		op:   "copy-data",
+		name: newInfo.MountDir(),
+		old:  old,
 	})
 	return nil
 }
@@ -155,29 +292,28 @@ func (f *fakeSnappyBackend) LinkSnap(info *snap.Info) error {
 	return nil
 }
 
-func (f *fakeSnappyBackend) UndoSetupSnap(s snap.PlaceInfo) error {
+func (f *fakeSnappyBackend) UndoSetupSnap(s snap.PlaceInfo, typ snap.Type, p progress.Meter) error {
+	p.Notify("setup-snap")
 	f.ops = append(f.ops, fakeOp{
-		op:   "undo-setup-snap",
-		name: s.MountDir(),
+		op:    "undo-setup-snap",
+		name:  s.MountDir(),
+		stype: typ,
 	})
 	return nil
 }
 
-func (f *fakeSnappyBackend) UndoCopySnapData(newInfo *snap.Info, flags int) error {
+func (f *fakeSnappyBackend) UndoCopySnapData(newInfo *snap.Info, oldInfo *snap.Info, p progress.Meter) error {
+	p.Notify("undo-copy-data")
+	old := "<no-old>"
+	if oldInfo != nil {
+		old = oldInfo.MountDir()
+	}
 	f.ops = append(f.ops, fakeOp{
 		op:   "undo-copy-snap-data",
 		name: newInfo.MountDir(),
+		old:  old,
 	})
 	return nil
-}
-
-func (f *fakeSnappyBackend) CanRemove(info *snap.Info, active bool) bool {
-	f.ops = append(f.ops, fakeOp{
-		op:     "can-remove",
-		name:   info.MountDir(),
-		active: active,
-	})
-	return true
 }
 
 func (f *fakeSnappyBackend) UnlinkSnap(info *snap.Info, meter progress.Meter) error {
@@ -189,11 +325,12 @@ func (f *fakeSnappyBackend) UnlinkSnap(info *snap.Info, meter progress.Meter) er
 	return nil
 }
 
-func (f *fakeSnappyBackend) RemoveSnapFiles(s snap.PlaceInfo, meter progress.Meter) error {
+func (f *fakeSnappyBackend) RemoveSnapFiles(s snap.PlaceInfo, typ snap.Type, meter progress.Meter) error {
 	meter.Notify("remove-snap-files")
 	f.ops = append(f.ops, fakeOp{
-		op:   "remove-snap-files",
-		name: s.MountDir(),
+		op:    "remove-snap-files",
+		name:  s.MountDir(),
+		stype: typ,
 	})
 	return nil
 }
@@ -225,7 +362,7 @@ func (f *fakeSnappyBackend) Candidate(sideInfo *snap.SideInfo) {
 	})
 }
 
-func (f *fakeSnappyBackend) Current(curInfo *snap.Info) {
+func (f *fakeSnappyBackend) CurrentInfo(curInfo *snap.Info) {
 	old := "<no-current>"
 	if curInfo != nil {
 		old = curInfo.MountDir()
@@ -239,7 +376,7 @@ func (f *fakeSnappyBackend) Current(curInfo *snap.Info) {
 func (f *fakeSnappyBackend) ForeignTask(kind string, status state.Status, ss *snapstate.SnapSetup) {
 	f.ops = append(f.ops, fakeOp{
 		op:    kind + ":" + status.String(),
-		name:  ss.Name,
-		revno: ss.Revision,
+		name:  ss.Name(),
+		revno: ss.Revision(),
 	})
 }

@@ -3,7 +3,7 @@
 
 Snapd is a universal package manager for Linux that works across multiple
 distributions and provides confined apps with transactional updates and
-well-defined communications mechanisms between them.
+well-defined communications and integration mechanisms between them.
 
 Take a tour of the snap experience at https://snapcraft.io/ or learn to
 create your own snap at https://snapcraft.io/create/
@@ -20,7 +20,7 @@ often be forked so you can install a specific developer's version if you
 prefer.
 
 The snapcore team leads development of snapd on Github, fork us there or
-find us on Freenode in #snappy
+find us on Freenode in #snapcraft
 
 ## Development
 
@@ -119,7 +119,7 @@ To run the various tests:
 This will check if the source format is consistent, that it builds, that all
 tests work as expected and that "go vet" and "golint" have no complaints.
 
-You can run individual test with:
+You can run individual test for a sub-package by changing into that directory and:
 
     go test -check.f $testname
 
@@ -131,7 +131,34 @@ If a test hangs, you can enable verbose mode:
 
 There is more to read about the testing framework on the [website](https://labix.org/gocheck)
 
-### Testing snapd on an all-snap system
+### Running the spread tests
+
+To run the spread tests locally you need the latest version of spread
+from https://github.com/snapcore/spread. It can be installed via:
+
+    $ sudo apt install qemu-kvm autopkgtest
+    $ sudo snap install spread
+
+Then setup the environment via:
+
+    $ mkdir -p .spread/qemu
+    $ cd .spread/qemu
+    $ adt-buildvm-ubuntu-cloud
+    $ mv adt-xenial-amd64-cloud.img ubuntu-16.04.img
+
+And you can run the tests via:
+
+    $ spread -v qemu:
+
+For quick reuse you can use:
+
+    $ spread -keep qemu:
+
+It will print how to reuse the systems. Make sure to use
+`export REUSE_PROJECT=1` in your environment too.
+
+
+### Testing snapd on a classic system
 
 To test the `snapd` REST API daemon on a snappy system you need to
 transfer it to the snappy system and then run:

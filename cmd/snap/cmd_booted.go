@@ -24,8 +24,10 @@ import (
 
 	"github.com/jessevdk/go-flags"
 
+	"github.com/snapcore/snapd/overlord"
+	"github.com/snapcore/snapd/overlord/boot"
 	"github.com/snapcore/snapd/partition"
-	"github.com/snapcore/snapd/snappy"
+	"github.com/snapcore/snapd/release"
 )
 
 type cmdBooted struct{}
@@ -41,6 +43,15 @@ func init() {
 }
 
 func (x *cmdBooted) Execute(args []string) error {
+	if len(args) > 0 {
+		return ErrExtraArgs
+	}
+
+	if release.OnClassic {
+		fmt.Fprintf(Stdout, "Ignoring 'booted' on classic")
+		return nil
+	}
+
 	bootloader, err := partition.FindBootloader()
 	if err != nil {
 		return fmt.Errorf("can not mark boot successful: %s", err)
@@ -50,5 +61,9 @@ func (x *cmdBooted) Execute(args []string) error {
 		return err
 	}
 
-	return snappy.SyncBoot()
+	ovld, err := overlord.New()
+	if err != nil {
+		return err
+	}
+	return boot.UpdateRevisions(ovld)
 }
